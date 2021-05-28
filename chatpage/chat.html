@@ -1,0 +1,332 @@
+<html>
+
+<head>
+
+<style>
+	* { font-family: arial; box-sizing:border-box; }
+	.chat-activity-title { height: 20px; font-size: 14px; overflow: hidden; }
+	.chat-activity-code { font-size: 14px; margin: 4px; }
+	.chat-activity-name { font-size: 16px; margin: 4px; }
+	.chat-send-message-item { margin:4px; padding:4px; }
+	.chat-item { margin:4px; border-bottom: 1px solid #efefef; border-radius: 0px; padding:4px; }
+	.chat-item-user { text-align: left; background-color: #f7f7f7; border-radius: 8px; }
+	.chat-user { font-weight: bold; }
+	.chat-message { font-size:100%; }
+	.chat-date { width:100%; text-align:right; font-family:courier; font-size:85%; margin-top:8px; color:#6f6f6f; }
+	.chat-remove { margin:0px 2px 0px 4px; padding:2px 8px 2px 8px; 
+		border: 1px solid #dfdfdf; border-radius: 8px; background-color:#cfcfcf; color:#4f4f4f; 
+		cursor: pointer; }
+	.chat-remove:hover { background-color:#2f2f2f; color:#dfdfdf; }
+	.chat-update { margin:0px 2px 0px 2px; padding:2px 8px 2px 8px; 
+		border: 1px solid #dfdfdf; border-radius: 8px; background-color:#cfcfcf; color:#4f4f4f; 
+		cursor: pointer; }
+	.chat-update:hover { background-color:#2f2f2f; color:#dfdfdf; }
+	.chat-message-update { width:100%; display:none; }
+
+	.chat-send { margin:4px; border: 1px solid #efefef; border-radius: 8px; padding:4px; }
+	.chat-send:after { content: ''; display: block; clear: both; }
+	.chat-send-message { display:inline-block; width:100%; height:54px; border: 1px solid #dfdfdf; border-radius: 8px; 
+		resize:none; font-size:14px; }
+	.chat-send-message:focus { outline: none !important; border:1px solid #efefef; box-shadow: 0 0 4px #719ECE; }
+	.chat-send-button { display:inline-block; margin-top: 8px; padding: 8px 24px 8px 24px; 
+		background-color:#cfcfcf; color:#2f2f2f; border-radius: 8px; cursor:pointer; text-align:center; 
+		font-size:14px; height:30px; }
+	.chat-send-button:hover { background-color:#2f2f2f; color:#dfdfdf; }
+	.chat-messages-list { margin:4px; overflow:auto; }
+</style>
+
+</head>
+
+<body>
+
+<div id='chat' style='position:relative; top:40px; left:40px; width:600px; height:80vh; border:4px solid #ededed; border-radius:8px; padding:8px;'></div>
+
+<script>
+
+	var _globals = { dateDelim: '.', timeDelim: ':', projectId: '1234567890', user:'user0', sessId:'ABCDEFGH',
+		chatData:[], chatServer:'http://localhost:8010/', chatReadUrl:'.chat_read', chatInsertUrl:'.chat_write',
+		chatUpdateUrl:'.chat_update', chatRemoveUrl:'.chat_remove',
+		 chatUpdateHTML:'&#9998;', chatSendUpdateHTML:'&#10004;', chatRemoveHTML:'&#10006;', chatCancelEditHTML:'&nwarhk;' };
+
+
+	loadAndDisplayChat( 'chat', 'activityCode' );
+
+	function loadAndDisplayChat( containerElemId, activityId, activityName ) {
+		let containerElem = document.getElementById(containerElemId);
+		if(!containerElem) {
+			return;
+		}
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200 ) {
+					containerElem.innerHTML = '';
+//console.log(xhttp.responseText);
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					_globals.activityIdChatIsCalledFor = activityId;
+					displayChat( containerElem, dataObj.buffer, activityId, activityName );
+				} else {
+					containerElem.innerHTML = 'Error loading the messages...';
+				}
+			}
+		}
+		containerElem.innerHTML = 'Please wait while loading the messages...';
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, activity: activityId } );
+		xhttp.open("POST", _globals.chatServer + _globals.chatReadUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
+		//xhttp.withCredentials = true;
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		xhttp.send( jsonData );
+	}
+
+
+	function displayChat( containerElem, dataResponse, activityCode, activityName ) {
+		let containerElemHeight = containerElem.getBoundingClientRect().height;
+
+		let activityTitleElem = document.createElement('div');
+		activityTitleElem.className = 'chat-activity-title'; 
+		activityTitleElem.innerHTML = `<span class='chat-activity-code'>[${activityCode}]</span>` +
+			`&nbsp;&nbsp;<span class='chat-activity-name'>${activityName}</span>`;
+		containerElem.appendChild(activityTitleElem);
+
+		let sendMessageElem = document.createElement('div');
+		sendMessageElem.className = 'chat-send-message-item';
+		containerElem.appendChild(sendMessageElem);
+
+		let inputElem = document.createElement('textarea');
+		inputElem.className = 'chat-send-message';
+		inputElem.rows = 4;
+		sendMessageElem.appendChild(inputElem);
+
+		let buttonElem = document.createElement('div');
+		buttonElem.type = 'button';
+		buttonElem.innerHTML = 'Send';
+		buttonElem.className = 'chat-send-button';
+		sendMessageElem.appendChild(buttonElem);
+
+		let messageListElem = document.createElement('div');
+		messageListElem.className = 'chat-messages-list';
+		messageListElem.style.height = (containerElemHeight - 156).toString() + 'px';
+		containerElem.appendChild(messageListElem);
+
+		buttonElem.onclick = function(e) {
+			insert( inputElem, messageListElem );
+		};
+
+		_globals.chatData = [];
+		for( let i = 0 ; i < dataResponse.length ; i++ ) {
+			let fields = dataResponse[i]; 	// 0 - user, 1 - message, 2 - datetime
+			if( fields.length < 4 ) {
+				continue;
+			}
+			let dataItem = { rowid: fields.rowid, user: fields.usr, message: fields.msg, datetime: dateIntoSpiderDateString( fields.dt ) };
+			_globals.chatData.push( dataItem );
+			addChatItem( messageListElem, dataItem )
+
+		}
+	}
+
+	function addChatItem( messageListElem, dataItem, addFirst = false ) {
+		let itemElem = document.createElement('div');
+			itemElem.className = 'chat-item';
+			if( _globals.user === dataItem.user ) {
+				itemElem.className += ' ' + 'chat-item-user';
+			}
+			if( !addFirst || messageListElem.children.length === 0 ) {
+				messageListElem.appendChild(itemElem);
+			} else {
+				messageListElem.insertBefore( itemElem, messageListElem.children[0] );
+			}
+
+			let userElem = document.createElement('div');
+			userElem.className = 'chat-user';
+			userElem.innerHTML = dataItem.user + ':';
+			itemElem.appendChild(userElem);
+
+			let messageElem = document.createElement('div');
+			messageElem.className = 'chat-message';
+			messageElem.innerHTML = dataItem.message;
+			itemElem.appendChild(messageElem);
+
+			dateElem = document.createElement('div');
+			dateElem.className = 'chat-date';
+			let date = dataItem.datetime;
+			dateElem.innerHTML = date;
+
+			if( _globals.user === dataItem.user ) {
+				let editElem = document.createElement('textarea');
+				editElem.className = 'chat-message-update';
+				editElem.rows = 4;
+				itemElem.appendChild(editElem);
+	
+				let removeElem = document.createElement('span');
+				removeElem.className = 'chat-remove';
+				dateElem.appendChild(removeElem);
+				removeElem.innerHTML = _globals.chatRemoveHTML;
+				removeElem.onclick = function(e) { remove( removeElem, updateElem, dataItem, itemElem, messageElem, editElem, dateElem ) };
+
+				let updateElem = document.createElement('span');
+				updateElem.className = 'chat-update';
+				dateElem.appendChild(updateElem);
+				updateElem.innerHTML = _globals.chatUpdateHTML;
+				updateElem.onclick = function(e) { update( updateElem, removeElem, dataItem, itemElem, messageElem, editElem, dateElem ) };
+			}
+
+			itemElem.appendChild(dateElem);
+	}
+
+	function remove( removeElem, updateElem, dataItem, itemElem, messageElem, editElem, dateElem ) {
+		if( messageElem.style.display === 'none' ) { 	// Cancel editing, not removing the element
+			messageElem.style.display = 'block';
+			editElem.style.display = 'none';
+			updateElem.innerHTML = _globals.chatUpdateHTML;
+			return;
+		}
+
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200 ) {
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					itemElem.remove();
+				}
+			}
+		}
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, rowid: dataItem.rowid } );
+		xhttp.open("POST", _globals.chatServer + _globals.chatRemoveUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+		xhttp.send( jsonData );
+	}
+
+
+	function insert( inputElem, messageListElem ) {
+		if( inputElem.value.length === 0 ) {
+			return;
+		}
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200 ) {
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					let dataItem = { rowid: dataObj.rowid, user: _globals.user, 
+						message: inputElem.value.replace(/\</,'&lt;').replace(/\>/,'&gt;').replace(/\n/g, '<br/>').replace(/"/g, '&quot;'), 
+						datetime: dateIntoSpiderDateString( dataObj.datetime ) };
+					_globals.chatData.push( dataItem );
+					addChatItem( messageListElem, dataItem, true );
+					inputElem.value = '';
+				}
+			}
+		}
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, 
+			activity: _globals.activityIdChatIsCalledFor, message: inputElem.value } );
+		xhttp.open("POST", _globals.chatServer + _globals.chatInsertUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		xhttp.send( jsonData );
+	}
+
+	function update( updateElem, removeElem, dataItem, itemElem, messageElem, editElem, dateElem ) {
+		if( messageElem.style.display !== 'none' ) {
+			messageElem.style.display = 'none';
+			editElem.style.display = 'block';
+			editElem.value = messageElem.innerHTML.replace(/<br>/g, '\n').replace(/&lt;/,'<').replace(/&gt;/,'>').replace(/&quot;/g, '"');
+			editElem.focus();
+			updateElem.innerHTML = _globals.chatSendUpdateHTML;
+			return;
+		}
+
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200  ) {
+					messageElem.style.display = 'block';
+					editElem.style.display = 'none';
+
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					messageElem.innerHTML = editElem.value.replace(/\</,'&lt;').replace(/\>/,'&gt;').replace(/\n/g, '<br/>').replace(/"/g, '&quot;');
+					updateElem.innerHTML = _globals.chatUpdateHTML;
+				}
+			}
+		}
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, 
+			rowid: dataItem.rowid, message: editElem.value } );
+		xhttp.open("POST", _globals.chatServer + _globals.chatUpdateUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+		xhttp.send( jsonData );
+	}
+
+
+	function dateIntoSpiderDateString( date, dateOnly=false ) {
+		let spiderDateString = null;
+
+		if( typeof(date) === 'undefined' || date === null || date === '' ) {
+			return '';
+		}
+
+		if( typeof(date) !== 'object' ) { 	// Not 'object' implies seconds
+			date = new Date( parseInt(date) * 1000 );
+		}
+		let year = date.getUTCFullYear(); 
+		let month = (date.getUTCMonth()+1);
+		if( month < 10 ) {
+			month = "0" + month;
+		}
+		let day = date.getUTCDate();
+		if( day < 10 ) {
+			day = "0" + day;
+		}
+		if( _globals.dateDMY ) {
+			spiderDateString = day + _globals.dateDelim + month + _globals.dateDelim + year; 
+		} else {
+			spiderDateString = month + _globals.dateDelim + day + _globals.dateDelim + year;		 
+		}
+		if( !dateOnly ) {
+			let hours = date.getUTCHours();
+			if( hours < 10 ) {
+				hours = "0" + hours;
+			}
+			let minutes = date.getUTCMinutes();
+			if( minutes < 10 ) {
+				minutes = "0" + minutes;
+			}
+			spiderDateString += "  " + hours + _globals.timeDelim +  minutes;
+		}
+		return( spiderDateString ); 
+	}
+
+	function parseJsonString( s ) {
+    	let errorParsingData = false;
+		let parsed;				
+    	try{
+	        parsed = JSON.parse(s); 
+    	} catch(e) {
+    		//console.log('Error: ' + e.name + ":" + e.message + "\n" + e.stack + "\n" + e.cause);
+			return null;
+    	}
+		return parsed;
+	}
+
+
+</script>
+
+</body>
+
+</html>
