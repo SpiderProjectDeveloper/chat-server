@@ -17,7 +17,7 @@
 #include <WS2tcpip.h>
 
 #define SERVER_DLL_EXPORT
-#include "WebServer.hpp"
+#include "ChatServer.hpp"
 
 
 #define MIME_BUF_SIZE 80

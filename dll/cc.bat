@@ -1,1 +1,1 @@
-cl /EHsc WebServer.cpp user32.lib shell32.lib
+cl /EHsc ChatServer.cpp user32.lib shell32.lib
