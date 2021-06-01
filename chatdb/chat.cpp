@@ -76,12 +76,12 @@ int main( void ) {
 	// Reading all the messages related to "activity0" into a buffer
 	std::wstring buffer; 
 	fwprintf( stderr, L"Reading:\n" );
-	pRead( db, std::wstring( L"activity0"), 100, 0, buffer );
+	pRead( db, std::wstring( L"activity0"), 100, 0, -1, buffer );
 	fwprintf( stderr, L"%ls\n\n", buffer.c_str() );
 
 	// Reading all the messages related to "activity0" (a callback version)
 	fwprintf( stderr, L"Reading with callback:\n" );
-	pReadCb( db, std::wstring(L"activity0"), 100, 0, read_callback );
+	pReadCb( db, std::wstring(L"activity0"), 100, 0, -1, read_callback );
 
 	// Closing the database
 	pClose( db );

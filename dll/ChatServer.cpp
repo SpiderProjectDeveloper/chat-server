@@ -23,6 +23,7 @@ void read_chat_db_callback(std::wstring& user, std::wstring& message, unsigned i
 	//				activityCode, 							// std::wstring&, 
 	//				limit,											// unsigned int, сколько записей прочитать 
 	// 				offset, 										// unsigned int, начиная с какой читать -  
+	// 				rowid, 											// unsigned int, rowid должен быть больше, чем это число; если -1, то читаем все  
 	// 				read_chat_db_callback ); 		// Собственно callback
 	//     
 }
@@ -112,7 +113,8 @@ int callback ( ServerData *sd ) {
   if( sd->message_id == SERVER_CHAT_READ ) {
 		// Читаем все сообщения, относящиеся к указанному проекту (projectId) и activity (activityCode).
 		// Приходит:
-		// {"sessId":"ABCDEFGH","user":"user0","projectId":"1234567890","activity":"activityCode", "limit":100, "offset":0 }
+		// {"sessId":"ABCDEFGH","user":"user0","projectId":"1234567890", 
+		// 	"activity":"activityCode", "limit":100, "offset":0, "rowid":-1 }
 		// Надо: 1) проверить sessId, 2) открыть (pOpen) базу с чатами по проекту (имя файла базы привязано к проекту),
 		// 3) сделать запрос "pRead" по указанной "activity".
 		// *** Если ключ "limit" отсутствует, надо взять 100. Если ключ "offset" отсутствует, надо взять 0.
@@ -122,9 +124,10 @@ int callback ( ServerData *sd ) {
 		if( db != nullptr ) {	// If opened...
 			std::wstring buffer; 
 			std::wstring act = L"activity0";	// Надо взять из json - "activity"
-			unsigned int limit = 100;
-			unsigned int offset = 0;
-			pRead( db, act, limit, offset, buffer );
+			unsigned int limit = 100; 				// Надо взять из json - "limit", если нет, ставим "100"
+			unsigned int offset = 0;					// Надо взять из json - "offset", если нет, ставим "0"
+			unsigned int rowid = -1;					// Надо взять из json - "rowid", если нет, то ставим "-1"
+			pRead( db, act, limit, offset, rowid, buffer );
 			sprintf( sd->sp_response_buf, "{ \"errcode\": 0, \"error\": \"\", \"buffer\": [ %ls ] }", buffer.c_str() );
 			sd->sp_response_buf_size = strlen(sd->sp_response_buf);
 			_callback_error_code = 0;

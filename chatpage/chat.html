@@ -44,15 +44,16 @@
 <script>
 
 	var _globals = { dateDelim: '.', timeDelim: ':', projectId: '1234567890', user:'user0', sessId:'ABCDEFGH',
-		chatData:[], chatServer:'http://localhost:8010/', chatReadUrl:'.chat_read', chatInsertUrl:'.chat_write',
+		chatServer:'http://localhost:8010/', chatReadUrl:'.chat_read', chatInsertUrl:'.chat_write',
 		chatUpdateUrl:'.chat_update', chatRemoveUrl:'.chat_remove',
-		 chatUpdateHTML:'&#9998;', chatSendUpdateHTML:'&#10004;', chatRemoveHTML:'&#10006;', chatCancelEditHTML:'&nwarhk;' };
-
+		chatUpdateHTML:'&#9998;', chatSendUpdateHTML:'&#10004;', chatRemoveHTML:'&#10006;', chatCancelEditHTML:'&nwarhk;',
+		chatMessagesLimit: 25, chatMessagesNumber: 0, chatCheckForNewMessagesTimeout: 30000, chatIsFullyLoaded: null, chatMaxRowId:-1 };
 
 	loadAndDisplayChat( 'chat', 'activityCode', 'Activity Name' );
 
-	function loadAndDisplayChat( containerElemId, activityId, activityName ) {
-		let containerElem = document.getElementById(containerElemId);
+	function loadAndDisplayChat( containerElemId, activityCode, activityName ) {
+		_globals.chatIsFullyLoaded = false;
+		let containerElem = (typeof(containerElemId) === 'string' ) ? document.getElementById(containerElemId) : containerElemId;
 		if(!containerElem) {
 			return;
 		}
@@ -61,23 +62,53 @@
 			if (xhttp.readyState == 4 ) {
 				if( xhttp.status == 200 ) {
 					containerElem.innerHTML = '';
-//console.log(xhttp.responseText);
 					let dataObj = parseJsonString(xhttp.responseText);
 					if( dataObj === null || dataObj.errcode !== 0 ) {
 						return;
 					}
-					_globals.activityIdChatIsCalledFor = activityId;
-					displayChat( containerElem, dataObj.buffer, activityId, activityName );
+					_globals.activityCodeChatIsCalledFor = activityCode;
+					displayChat( containerElem, dataObj.buffer, activityCode, activityName );
 				} else {
 					containerElem.innerHTML = 'Error loading the messages...';
 				}
 			}
 		}
 		containerElem.innerHTML = 'Please wait while loading the messages...';
-		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, activity: activityId } );
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, 
+			projectId: _globals.projectId, activity: activityCode, limit:_globals.chatMessagesLimit } );
 		xhttp.open("POST", _globals.chatServer + _globals.chatReadUrl, true);
 		xhttp.setRequestHeader("Cache-Control", "no-cache");
-		//xhttp.withCredentials = true;
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		xhttp.send( jsonData );
+	}
+
+	function loadMoreMessages( messageListElem ) {
+		if( _globals.chatIsFullyLoaded ) {
+			return;
+		}
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200 ) {
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					if( !('buffer' in dataObj) || dataObj.buffer.length < _globals.chatMessagesLimit ) {
+						_globals.chatIsFullyLoaded = true;
+					}
+					displayMoreMessages( messageListElem, dataObj.buffer );
+				} else {
+					;
+				}
+			}
+		}
+		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, 
+			projectId: _globals.projectId, activity: _globals.activityCodeChatIsCalledFor,
+			limit: _globals.chatMessagesLimit, offset:_globals.chatMessagesNumber + _globals.chatMessagesLimit } );
+		xhttp.open("POST", _globals.chatServer + _globals.chatReadUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
 		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
 		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
 		xhttp.send( jsonData );
@@ -113,22 +144,87 @@
 		messageListElem.style.height = (containerElemHeight - 156).toString() + 'px';
 		containerElem.appendChild(messageListElem);
 
+		messageListElem.addEventListener('scroll', function(e) {
+			if( messageListElem.scrollTop >= (messageListElem.scrollHeight - messageListElem.offsetHeight) ) {
+				loadMoreMessages( messageListElem );
+			}
+		});
+
 		buttonElem.onclick = function(e) {
 			insert( inputElem, messageListElem );
 		};
 
-		_globals.chatData = [];
+		for( let i = 0 ; i < dataResponse.length ; i++ ) {
+			let fields = dataResponse[i]; 	// 0 - user, 1 - message, 2 - datetime
+			if( fields.length < 4 ) {
+				continue;
+			}
+			let rowid;
+			try {
+				rowid = parseInt(fields.rowid);
+			} catch(e) {
+				continue;
+			}
+			let dataItem = { rowid: rowid, user: fields.usr, message: fields.msg, datetime: dateIntoSpiderDateString( fields.dt ) };
+			addChatItem( messageListElem, dataItem )
+		}
+
+		setTimeout( function() { checkForNewMessages( messageListElem ); }, _globals.chatCheckForNewMessagesTimeout );
+	}
+
+	function displayMoreMessages( messageListElem, dataResponse ) {
 		for( let i = 0 ; i < dataResponse.length ; i++ ) {
 			let fields = dataResponse[i]; 	// 0 - user, 1 - message, 2 - datetime
 			if( fields.length < 4 ) {
 				continue;
 			}
 			let dataItem = { rowid: fields.rowid, user: fields.usr, message: fields.msg, datetime: dateIntoSpiderDateString( fields.dt ) };
-			_globals.chatData.push( dataItem );
-			addChatItem( messageListElem, dataItem )
-
+			addChatItem( messageListElem, dataItem );
 		}
 	}
+
+	function displayNewMessages( messageListElem, dataResponse ) {
+		for( let i = dataResponse.length -1 ; i >=0 ; i-- ) {
+			let fields = dataResponse[i]; 	// 0 - user, 1 - message, 2 - datetime
+			if( fields.length < 4 ) {
+				continue;
+			}
+			let dataItem = { rowid: fields.rowid, user: fields.usr, message: fields.msg, datetime: dateIntoSpiderDateString( fields.dt ) };
+			addChatItem( messageListElem, dataItem, true );
+		}
+	}
+
+
+	function checkForNewMessages( messageListElem ) {
+		let xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+			if (xhttp.readyState == 4 ) {
+				if( xhttp.status == 200 ) {
+					let dataObj = parseJsonString(xhttp.responseText);
+					if( dataObj === null || dataObj.errcode !== 0 ) {
+						return;
+					}
+					if( 'buffer' in dataObj && dataObj.buffer.length == 0 ) {					
+						displayNewMessages( messageListElem, dataObj.buffer );
+					}
+				} else {
+					;
+				}
+				setTimeout( function() { checkForNewMessages( messageListElem ); }, _globals.chatCheckForNewMessagesTimeout );
+			}
+		}
+		let jsonData = JSON.stringify({ 
+			sessId: _globals.sessId, user: _globals.user, 
+			projectId: _globals.projectId, activity: _globals.activityCodeChatIsCalledFor,
+			limit: _globals.chatMessagesLimit, offset:0, rowid: _globals.chatMaxRowId 
+		});
+		xhttp.open("POST", _globals.chatServer + _globals.chatReadUrl, true);
+		xhttp.setRequestHeader("Cache-Control", "no-cache");
+		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
+		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		xhttp.send( jsonData );	
+	}
+
 
 	function addChatItem( messageListElem, dataItem, addFirst = false ) {
 		let itemElem = document.createElement('div');
@@ -177,6 +273,10 @@
 			}
 
 			itemElem.appendChild(dateElem);
+			_globals.chatMessagesNumber++;
+			if( dataItem.rowid > _globals.chatMaxRowId ) {
+				_globals.chatMaxRowId = dataItem.rowid;
+			}
 	}
 
 	function remove( removeElem, updateElem, dataItem, itemElem, messageElem, editElem, dateElem ) {
@@ -195,7 +295,8 @@
 					if( dataObj === null || dataObj.errcode !== 0 ) {
 						return;
 					}
-					itemElem.remove();
+					itemElem.remove();			
+					_globals.chatMessagesNumber--;
 				}
 			}
 		}
@@ -223,14 +324,13 @@
 					let dataItem = { rowid: dataObj.rowid, user: _globals.user, 
 						message: inputElem.value.replace(/\</,'&lt;').replace(/\>/,'&gt;').replace(/\n/g, '<br/>').replace(/"/g, '&quot;'), 
 						datetime: dateIntoSpiderDateString( dataObj.datetime ) };
-					_globals.chatData.push( dataItem );
 					addChatItem( messageListElem, dataItem, true );
 					inputElem.value = '';
 				}
 			}
 		}
 		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, projectId: _globals.projectId, 
-			activity: _globals.activityIdChatIsCalledFor, message: inputElem.value } );
+			activity: _globals.activityCodeChatIsCalledFor, message: inputElem.value } );
 		xhttp.open("POST", _globals.chatServer + _globals.chatInsertUrl, true);
 		xhttp.setRequestHeader("Cache-Control", "no-cache");
 		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		

@@ -14,7 +14,8 @@ static const std::wstring _chat_table = L"chat";
 static int make_request( sqlite3 *, const wchar_t *request, void (*callback)( sqlite3_stmt *, void *), void *callback_data );
 static bool is_table_exists( sqlite3 * );
 static int create_table( sqlite3 * );
-static void  create_read_request_string( std::wstring& r, std::wstring& activity, unsigned int limit, unsigned int offset );
+static void  create_read_request_string( std::wstring& r, std::wstring& activity, 
+	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan );
 
 void* chatDbOpen( std::wstring& dbFileName ) {
 	sqlite3 *_db = nullptr;
@@ -67,7 +68,7 @@ int chatDbWrite( void *db, std::wstring& activity, std::wstring& user, std::wstr
 	return ret_val;
 }
 
-int chatDbRead( void *db, std::wstring& activity, unsigned int limit, unsigned int offset, std::wstring& buffer ) {
+int chatDbRead( void *db, std::wstring& activity, unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan, std::wstring& buffer ) {
 	int ret_val = -1;
 	if( db == nullptr ) {
 		return ret_val;
@@ -75,7 +76,7 @@ int chatDbRead( void *db, std::wstring& activity, unsigned int limit, unsigned i
 	sqlite3* _db = (sqlite3 *)db;
 
 	std::wstring r;
-	create_read_request_string( r, activity, limit, offset );
+	create_read_request_string( r, activity, limit, offset, rowidGreaterThan );
 	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *buffer ) { 
 			wchar_t *pmsg = (wchar_t*)sqlite3_column_text16( stmt, 1 );
 			std::wstring msg = L"";
@@ -111,7 +112,9 @@ int chatDbRead( void *db, std::wstring& activity, unsigned int limit, unsigned i
 	return status;
 }
 
-int chatDbReadCb( void* db, std::wstring& activity, unsigned int limit, unsigned int offset, ChatDbReadCallBack cb ) {
+int chatDbReadCb( void* db, std::wstring& activity, 
+	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan, ChatDbReadCallBack cb ) 
+{
 	int ret_val = -1;
 	if( db == nullptr ) {
 		return ret_val;
@@ -119,7 +122,7 @@ int chatDbReadCb( void* db, std::wstring& activity, unsigned int limit, unsigned
 	sqlite3* _db = (sqlite3 *)db;
 	
 	std::wstring r;
-	create_read_request_string( r, activity, limit, offset );
+	create_read_request_string( r, activity, limit, offset, rowidGreaterThan );
 	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *pvcb ) { 
 			std::wstring usr = std::wstring( (wchar_t*)sqlite3_column_text16( stmt, 0 ) );
 			std::wstring msg = std::wstring( (wchar_t*)sqlite3_column_text16( stmt, 1 ) );
@@ -225,8 +228,16 @@ static int create_table( sqlite3* _db ) {
 }
 
 
-static void create_read_request_string( std::wstring& r, std::wstring& activity, unsigned int limit, unsigned int offset ) {
-	r = L"SELECT user, message, datetime, ROWID FROM '" + _chat_table + 
-		L"' WHERE activity='" + activity + L"' ORDER BY datetime DESC" + 
-		L" LIMIT " + std::to_wstring(limit) + L" OFFSET " + std::to_wstring(offset) + L";";
+static void create_read_request_string( std::wstring& r, std::wstring& activity, 
+	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan ) 
+{
+	if( rowidGreaterThan == -1 ) {
+		r = L"SELECT user, message, datetime, ROWID FROM '" + _chat_table + 
+			L"' WHERE activity='" + activity + L"' ORDER BY datetime DESC" + 
+			L" LIMIT " + std::to_wstring(limit) + L" OFFSET " + std::to_wstring(offset) + L";";
+	} else {
+		r = L"SELECT user, message, datetime, ROWID FROM '" + _chat_table + 
+			L"' WHERE activity='" + activity + L"' AND ROWID>" + std::to_wstring(rowidGreaterThan) + L" ORDER BY datetime DESC" + 
+			L" LIMIT " + std::to_wstring(limit) + L" OFFSET " + std::to_wstring(offset) + L";";
+	}
 }
