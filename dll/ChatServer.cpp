@@ -11,29 +11,37 @@ using namespace std;
 #endif 
 
 // A callback to read from databases
-void read_chat_db_callback(std::wstring& user, std::wstring& message, unsigned int &datetime, unsigned int& rowid) {
+void read_chat_db_callback_(wchar_t *user, wchar_t *message, unsigned int &datetime, unsigned int& rowid, void *customData ) {
 
-	// Тут я просто вывожу на stderr прочитанные значения. 
-	fwprintf( stderr, L"user=%ls, message=%ls, datetime=%u, rowid=%u\n", user.c_str(), message.c_str(), datetime, rowid );
+	// Тут я просто вывожу на stderr прочитанные значения
+	fwprintf( stderr, L"user=%ls, message=%ls, datetime=%u, rowid=%u, customData(counter)=%d\n", 
+		user, message, datetime, rowid, *(int *)customData );
 
-	// На самом деле здесь надо реализовать функционал, который покажет пользователю за десктопом содержимое чата.	
+	// На самом деле здесь надо реализовать функционал, который накапливает прочитанное в буфере и потом покывает пользователю
+	// содержимое чата.	
+	// Можно сделать примерно так: 
+	// wchar_t *buffer = (wchar_t *)customData; 	// Берем указатель на буфер для чтение и дописываем туда данные... 
+	// и далее дописывать в буфер. Или передавать указатель на структуру, где будет как буфер, так и 
+	// размер выделенной для него памяти, чтобы reallocate
+
 	// Вызов этого callback'а инициируется другим вызовом:
-	// 		pReadCb( 
+	// 		pReadCb_( 
 	//				db, 												// void *,  указатель на базу 
-	//				activityCode, 							// std::wstring&, 
+	//				activityCode, 							// wchar_t *activity, 
 	//				limit,											// unsigned int, сколько записей прочитать 
 	// 				offset, 										// unsigned int, начиная с какой читать -  
 	// 				rowid, 											// unsigned int, rowid должен быть больше, чем это число; если -1, то читаем все  
-	// 				read_chat_db_callback ); 		// Собственно callback
-	//     
+	// 				read_chat_db_callback,	  	// Собственно callback: void read_chat_db_callback_(wchar_t *user, wchar_t *message, unsigned int &datetime, unsigned int& rowid, void *customData )
+	//     		customData									// void *, Тут можно передать буфер, куда будут накаливаться прочитанные данные 
+	// );
 }
 
 // The pointers to the functions for database management
-CHAT_DB_OPEN pOpen;
-CHAT_DB_WRITE pWrite;
-CHAT_DB_READ pRead;
-CHAT_DB_READ_CB pReadCb;
-CHAT_DB_UPDATE pUpdate;
+CHAT_DB_OPEN_ pOpen;
+CHAT_DB_WRITE_ pWrite;
+//CHAT_DB_READ pRead;
+CHAT_DB_READ_CB_ pReadCb;
+CHAT_DB_UPDATE_ pUpdate;
 CHAT_DB_REMOVE pRemove;
 CHAT_DB_CLOSE pClose;
 
@@ -51,11 +59,11 @@ int main( void )
 	hChatDbDLL = LoadLibrary("chatdb"); 	// Loading the "chatdb.dll" library
 	if( hChatDbDLL != nullptr ) { 		// If loaded Ok...
 		cerr << "The chat Dll has been loaded!";
-		pOpen = (CHAT_DB_OPEN) GetProcAddress (hChatDbDLL, "chatDbOpen");
-		pWrite = (CHAT_DB_WRITE) GetProcAddress (hChatDbDLL, "chatDbWrite");
-		pRead = (CHAT_DB_READ) GetProcAddress (hChatDbDLL, "chatDbRead"); 		// This one is for the server
-		pReadCb = (CHAT_DB_READ_CB) GetProcAddress (hChatDbDLL, "chatDbReadCb"); 		// This one is for use in SP
-		pUpdate = (CHAT_DB_UPDATE) GetProcAddress (hChatDbDLL, "chatDbUpdate");
+		pOpen = (CHAT_DB_OPEN_) GetProcAddress (hChatDbDLL, "chatDbOpen_");
+		pWrite = (CHAT_DB_WRITE_) GetProcAddress (hChatDbDLL, "chatDbWrite_");
+		//pRead = (CHAT_DB_READ) GetProcAddress (hChatDbDLL, "chatDbRead"); 		// This one is for the server
+		pReadCb = (CHAT_DB_READ_CB_) GetProcAddress (hChatDbDLL, "chatDbReadCb_"); 		// This one is for use in SP
+		pUpdate = (CHAT_DB_UPDATE_) GetProcAddress (hChatDbDLL, "chatDbUpdate_");
 		pRemove = (CHAT_DB_REMOVE) GetProcAddress (hChatDbDLL, "chatDbRemove");
 		pClose = (CHAT_DB_CLOSE) GetProcAddress (hChatDbDLL, "chatDbClose");
 
@@ -119,16 +127,22 @@ int callback ( ServerData *sd ) {
 		// 3) сделать запрос "pRead" по указанной "activity".
 		// *** Если ключ "limit" отсутствует, надо взять 100. Если ключ "offset" отсутствует, надо взять 0.
 
-		std::wstring dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
+		wchar_t *dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
 		db = pOpen( dbFileName ); 	
 		if( db != nullptr ) {	// If opened...
-			std::wstring buffer; 
-			std::wstring act = L"activity0";	// Надо взять из json - "activity"
+			wchar_t buffer[10000]; 
+			wchar_t *act{ L"activity0" };	// Надо взять из json - "activity"
 			unsigned int limit = 100; 				// Надо взять из json - "limit", если нет, ставим "100"
 			unsigned int offset = 0;					// Надо взять из json - "offset", если нет, ставим "0"
 			unsigned int rowid = -1;					// Надо взять из json - "rowid", если нет, то ставим "-1"
-			pRead( db, act, limit, offset, rowid, buffer );
-			sprintf( sd->sp_response_buf, "{ \"errcode\": 0, \"error\": \"\", \"buffer\": [ %ls ] }", buffer.c_str() );
+			pReadCb( db, act, limit, offset, rowid, read_chat_db_callback_, buffer );
+			// Из вызовов коллбека надо сформировать json и записать его в buffer
+			// Ниже две строки генерируют фейковые данные (dt - это datetime).
+			// В тексте сообщения надо менять: 
+			// 	1) "\r", "\n" на "<br/>", 2) \t на "    ", 3) "<" на "&lt;", 4) ">" на "&gt;", 5) двойную кавычку на "&quot;"
+			// В результате в буфере будет что-то вроде этого: 
+			wcscpy( buffer, L"[ { \"rowid\":100, \"usr\":\"user name\", \"msg\":\"A message form user\", \"dt\":12312312 } ]");
+			sprintf( sd->sp_response_buf, "{ \"errcode\": 0, \"error\": \"\", \"buffer\": [ %ls ] }", buffer );
 			sd->sp_response_buf_size = strlen(sd->sp_response_buf);
 			_callback_error_code = 0;
 			success = true;
@@ -142,13 +156,12 @@ int callback ( ServerData *sd ) {
 		// Надо: 1) проверить sessId, 2) открыть базу с чатами по проекту (имя файла базы привязано к проекту),
 		// 3) сделать запрос "pWrite", указав activity, user и message.
 
-		std::wstring dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
+		wchar_t *dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
 		db = pOpen( dbFileName ); 	
 		if( db != nullptr ) {	// If opened...
-			std::wstring buffer; 
-			std::wstring act = L"activity0";	// Надо взять из json - "activity"
-			std::wstring usr = L"user0";			// Надо взять из json - "user"
-			std::wstring msg = L"a message from user 0 sent through the dll"; // Надо взять из json - "message"
+			wchar_t *act{L"activity0"};	// Надо взять из json - "activity"
+			wchar_t *usr{L"user0"};			// Надо взять из json - "user"
+			wchar_t *msg{L"a message from user 0 sent through the dll"}; // Надо взять из json - "message"
 			unsigned long int rowid, write_time;
 			status = pWrite( db, act, usr, msg, rowid, write_time );
 			if( !(status < 0) ) {
@@ -165,10 +178,10 @@ int callback ( ServerData *sd ) {
 		// Приходит:
 		// {"sessId":"ABCDEFGH","user":"user0","projectId":"1234567890","rowid":114,"message":"an updated message"}
 
-		std::wstring dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
+		wchar_t *dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
     db = pOpen( dbFileName ); 	
 		if( db != nullptr ) {	// If opened...
-			std::wstring msg = L"a message update from user 0 sent through the dll"; 	// Надо взять из json - "message"
+			wchar_t *msg{ L"a message update from user 0 sent through the dll" }; 	// Надо взять из json - "message"
 			unsigned int rowid = 73;		// Надо взять из json - "rowid"
 			status = pUpdate( db, msg, rowid );
 			if( !(status < 0) ) {
@@ -185,7 +198,7 @@ int callback ( ServerData *sd ) {
 		// Приходит:
 		// {"sessId":"ABCDEFGH","user":"user0","projectId":"1234567890","rowid":114}
 
-		std::wstring dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
+		wchar_t *dbFileName{L"chat.db"}; 	// Надо прочитать из свойств проекта (проект найти по projectId)
     db = pOpen( dbFileName ); 	
 		if( db != nullptr ) {	// If opened...
 			unsigned int rowid = 83; 		// Надо взять из json - "rowid"

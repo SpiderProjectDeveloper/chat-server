@@ -8,26 +8,27 @@
 
 #define CHAT_DB_DLL_EXPORT 1
 #include "chatdb.h"
+#include "chatdb_sys.h"
 
-static const std::wstring _chat_table = L"chat";				
-
-static int make_request( sqlite3 *, const wchar_t *request, void (*callback)( sqlite3_stmt *, void *), void *callback_data );
+static int make_request( 
+	sqlite3 *, const char *request, void (*callback)( sqlite3_stmt *, void *, void *), 
+	void *callback_data, void *custom_data 
+);
 static bool is_table_exists( sqlite3 * );
 static int create_table( sqlite3 * );
-static void  create_read_request_string( std::wstring& r, std::wstring& activity, 
+static void  create_read_request_string( std::string& r, std::string& activity, 
 	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan );
 
-void* chatDbOpen( std::wstring& dbFileName ) {
+void* chatDbOpen_( const wchar_t *dbFileName ) {
 	sqlite3 *_db = nullptr;
-	const wchar_t *dbfn = dbFileName.c_str();
-	int status = sqlite3_open16( dbfn, &_db );
+	int status = sqlite3_open16( dbFileName, &_db );
 	if( status != SQLITE_OK ) {
 		return nullptr;
 	}
 	return (void *)_db;
 }
 
-void chatDbClose( void *db ) {
+void chatDbClose_( void *db ) {
 	if( db == nullptr ) {
 		return;
 	}
@@ -35,25 +36,26 @@ void chatDbClose( void *db ) {
 	sqlite3_close(_db);
 }
 
-int chatDbWrite( void *db, std::wstring& activity, std::wstring& user, std::wstring& message, 
+int chatDbWrite_( void *db, const char *activity, const char *user, const char *message, 
 	unsigned long int& rowid, unsigned long int& write_time ) 
 {
 	int ret_val = -1;
 	if( db == nullptr ) {
 		return ret_val;
 	}
-	sqlite3* _db = (sqlite3 *)db;
+	sqlite3 *_db = (sqlite3 *)db;
 	if( !is_table_exists(_db) ) {
 		if( create_table(_db) != 0 ) {
 			return ret_val;
 		}
 	}
 
-	sqlite3_stmt	*statement;
+	sqlite3_stmt *statement;
 	write_time = time(NULL);
-	std::wstring r = L"INSERT INTO '" + _chat_table + L"' ('user', 'message', 'activity', 'datetime')" + 
-		L" VALUES ('" + user+ L"','" + message + L"','" + activity + L"'," + std::to_wstring(write_time) + L");";
-	int status = sqlite3_prepare16( _db, r.c_str(), -1, &statement, NULL );
+	std::string r = "INSERT INTO '" + _chat_table + "' ('user', 'message', 'activity', 'datetime')" + 
+		" VALUES ('" + user + "','" + message + "','" + activity + "'," + std::to_string(write_time) + ");";
+	const char *sql = r.c_str();
+	int status = sqlite3_prepare_v2( _db, sql, strlen(sql)+1, &statement, NULL );
 	if( status != SQLITE_OK ) {
 		return ret_val;
 	}
@@ -68,84 +70,158 @@ int chatDbWrite( void *db, std::wstring& activity, std::wstring& user, std::wstr
 	return ret_val;
 }
 
-int chatDbRead( void *db, std::wstring& activity, unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan, std::wstring& buffer ) {
-	int ret_val = -1;
-	if( db == nullptr ) {
-		return ret_val;
-	}
-	sqlite3* _db = (sqlite3 *)db;
-
-	std::wstring r;
-	create_read_request_string( r, activity, limit, offset, rowidGreaterThan );
-	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *buffer ) { 
-			wchar_t *pmsg = (wchar_t*)sqlite3_column_text16( stmt, 1 );
-			std::wstring msg = L"";
-			int l = wcslen(pmsg);
-
-			for( int i = 0 ; i < l ; i++ ) {
-				if( pmsg[i] == L'\r' && i < l-1 && pmsg[i+1] == L'\n' ) {
-					msg += L"<br>";
-				} else if( pmsg[i] == L'\n' || pmsg[i] == L'\r' ) {
-					msg += L"<br>";
-				} else if( pmsg[i] == L'\t' ) {
-					msg += L"    ";
-				} else if( pmsg[i] == L'<' ) {
-					msg += L"&lt;";
-				} else if( pmsg[i] == L'>' ) {
-					msg += L"&gt;";
-				} else if( pmsg[i] == L'"' ) {
-					msg += L"&quot;";
-				} else {
-					msg += pmsg[i];
-				}
-			}
-			if( ((std::wstring *)buffer)->size() > 0 ) {
-				*((std::wstring *)buffer) += L',';	
-			}
-			std::wstring usr = std::wstring( (wchar_t*)sqlite3_column_text16( stmt, 0 ) );
-			std::wstring dt = std::to_wstring( sqlite3_column_int( stmt, 2 ) );
-			std::wstring rowid = std::to_wstring( sqlite3_column_int( stmt, 3 ) );
-			*((std::wstring *)buffer) +=  L"{ \"usr\":\"" + usr + L"\", \"msg\":\"" + msg + 
-				L"\", \"dt\": " + dt + L", \"rowid\":" + rowid + L"}";
-		}, (void *)&buffer
-	);
-	return status;
+static int beginTransaction( sqlite3* _db ) {
+	return ( sqlite3_exec(_db, "BEGIN TRANSACTION;", NULL, NULL, NULL) == SQLITE_OK ) ? 0 : -1;
 }
 
-int chatDbReadCb( void* db, std::wstring& activity, 
-	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan, ChatDbReadCallBack cb ) 
+static int commitTransaction( sqlite3* _db ) {
+	return ( sqlite3_exec(_db, "END TRANSACTION;", NULL, NULL, NULL) == SQLITE_OK ) ? 0 : -1;
+}
+
+static int rollbackTransaction( sqlite3* _db ) {
+	return ( sqlite3_exec(_db, "ROLLBACK;", NULL, NULL, NULL) == SQLITE_OK ) ? 0 : -1;
+}
+
+int chatDbWriteWithImage_( void* db, const char *activity, const char *user, const char *message, 
+	const char* icon, const char* image, int width, int height, unsigned long int& rowid, unsigned long int& write_time ) 
+{
+	int error_ret_val = -1, ok_ret_val = 0;
+	int status;
+
+	if( db == nullptr ) {
+		return error_ret_val;
+	}
+	sqlite3* _db = (sqlite3 *)db;
+	if( !is_table_exists(_db) ) {
+		if( create_table(_db) != 0 ) {
+			return error_ret_val;
+		}
+	}
+
+	if( beginTransaction(_db) != 0 ) { return error_ret_val; }
+
+	bool imgInserted = false;
+	std::string rimg = "INSERT INTO `" + _images_table + "` ('width', 'height', 'image')" + " VALUES (" + 
+		std::to_string(width) + ", " + std::to_string(height) + ", \"" + image + "\" );";	
+	if( sqlite3_exec( _db, rimg.c_str(), NULL, NULL, NULL ) == SQLITE_OK ) {
+			imgInserted	= true;
+	} 
+	if( !imgInserted ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	bool msgInserted = false;
+	int imageRowId = sqlite3_last_insert_rowid(_db);
+	write_time = time(NULL);
+	std::string rmsg = "INSERT INTO `" + _chat_table + "` ('user', 'message', 'activity', 'datetime', 'imageIcon', 'imageId' )" + 
+			" VALUES (\"" + user + "\", \"" + message + "\",\"" + activity + "\"," + 
+				std::to_string(write_time) + ",\"" + icon + "\"," + std::to_string(imageRowId) + ");";
+	if( sqlite3_exec( _db, rmsg.c_str(), NULL, NULL, NULL ) == SQLITE_OK ) {
+			msgInserted	= true;
+	} 
+	if( !msgInserted ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	rowid = sqlite3_last_insert_rowid(_db);
+	
+	if( commitTransaction(_db) != 0 ) { return error_ret_val; }
+
+	return ok_ret_val;
+}
+
+
+int chatDbRead_( 
+	void* db, char *activity, unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan, 
+	ChatDbReadCallBack_ cb, void *customData ) 
 {
 	int ret_val = -1;
 	if( db == nullptr ) {
 		return ret_val;
 	}
-	sqlite3* _db = (sqlite3 *)db;
+	sqlite3 *_db = (sqlite3 *)db;
 	
-	std::wstring r;
-	create_read_request_string( r, activity, limit, offset, rowidGreaterThan );
-	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *pvcb ) { 
-			std::wstring usr = std::wstring( (wchar_t*)sqlite3_column_text16( stmt, 0 ) );
-			std::wstring msg = std::wstring( (wchar_t*)sqlite3_column_text16( stmt, 1 ) );
+	std::string r;
+	create_read_request_string( r, std::string(activity), limit, offset, rowidGreaterThan );
+	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *pvcb, void *customData ) { 
+			char *usr = (char*)sqlite3_column_text( stmt, 0 );
+			char *msg = (char*)sqlite3_column_text( stmt, 1 );
 			unsigned int dt = sqlite3_column_int( stmt, 2 );
 			unsigned int rowid = sqlite3_column_int( stmt, 3 );
-			ChatDbReadCallBack cb = (ChatDbReadCallBack)pvcb;
-			cb( usr, msg, dt, rowid ); 				
-		}, (void *)cb
+			char *icon = (char*)sqlite3_column_text( stmt, 4 );
+			unsigned int imageId = sqlite3_column_int( stmt, 5 );
+
+			ChatDbReadCallBack_ cb = (ChatDbReadCallBack_)pvcb;
+			cb( usr, msg, dt, rowid, icon, imageId, customData ); 				
+		}, 
+		(void *)cb,
+		customData
+	);
+	return status;		
+}
+
+int chatDbReadId_( void* db, unsigned int rowid, ChatDbReadCallBack_ cb, void *customData ) 
+{
+	int ret_val = -1;
+	if( db == nullptr ) {
+		return ret_val;
+	}
+	sqlite3 *_db = (sqlite3 *)db;
+	
+	std::string r = "SELECT user, message, datetime, ROWID, imageIcon, imageId FROM `" + _chat_table + "`" + 
+			" WHERE ROWID=" + std::to_string(rowid) + " LIMIT 1;";
+	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *pvcb, void *customData ) { 
+			char *usr = (char*)sqlite3_column_text( stmt, 0 );
+			char *msg = (char*)sqlite3_column_text( stmt, 1 );
+			unsigned int dt = sqlite3_column_int( stmt, 2 );
+			unsigned int rowid = sqlite3_column_int( stmt, 3 );
+			char *icon = (char*)sqlite3_column_text( stmt, 4 );
+			unsigned int imageId = sqlite3_column_int( stmt, 5 );
+
+			ChatDbReadCallBack_ cb = (ChatDbReadCallBack_)pvcb;
+			cb( usr, msg, dt, rowid, icon, imageId, customData ); 				
+		}, 
+		(void *)cb,
+		customData
 	);
 	return status;		
 }
 
 
-int chatDbUpdate( void* db, std::wstring &message, unsigned int rowid ) {
+int chatDbReadImage_( void* db, unsigned int rowid, ChatDbReadImageCallBack_ cb, void *customData ) 
+{
+	int ret_val = -1;
+	if( db == nullptr ) {
+		return ret_val;
+	}
+	sqlite3 *_db = (sqlite3 *)db;
+	
+	std::string r = "SELECT image, width, height FROM `" +_images_table + "` WHERE ROWID=" + std::to_string(rowid) + " LIMIT 1;";
+	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *pvcb, void *customData ) { 
+			char *image = (char*)sqlite3_column_text( stmt, 0 );
+			unsigned int width = sqlite3_column_int( stmt, 1 );
+			unsigned int height = sqlite3_column_int( stmt, 2 );
+			ChatDbReadImageCallBack_ cb = (ChatDbReadImageCallBack_)pvcb;
+			cb( image, width, height, customData ); 				
+		}, 
+		(void *)cb,
+		customData
+	);
+	return status;		
+}
+
+int chatDbUpdate_( void* db, const char *message, unsigned int rowid ) {
 		int ret_val = -1;
 		if( db == nullptr ) {
 			return ret_val;
 		}
 		sqlite3* _db = (sqlite3 *)db;
 
-		sqlite3_stmt	*statement;
-		std::wstring r = L"UPDATE '" + _chat_table + L"' SET message='" + message + L"' WHERE ROWID=" + std::to_wstring(rowid) + L";";
-		int status = sqlite3_prepare16( _db, r.c_str(), -1, &statement, NULL );
+		sqlite3_stmt *statement;
+		std::string r = "UPDATE '" + _chat_table + "' SET message='" + message + "' WHERE ROWID=" + std::to_string(rowid) + ";";
+		const char *sql = r.c_str();
+		int status = sqlite3_prepare_v2( _db, sql, strlen(sql)+1, &statement, NULL );
 		if( status != SQLITE_OK ) {
 			return ret_val;
 		}
@@ -157,39 +233,129 @@ int chatDbUpdate( void* db, std::wstring &message, unsigned int rowid ) {
 		return ret_val;
 }
 
-int chatDbRemove( void* db, unsigned int rowid ) {
-		int ret_val = -1;
-		if( db == nullptr ) {
-			return ret_val;
-		}
-		sqlite3* _db = (sqlite3 *)db;
 
-		sqlite3_stmt	*statement;
-		std::wstring r = L"DELETE FROM '" + _chat_table + L"' WHERE ROWID=" + std::to_wstring(rowid) + L";";
-		int status = sqlite3_prepare16( _db, r.c_str(), -1, &statement, NULL );
-		if( status != SQLITE_OK ) {
-			return ret_val;
+int chatDbUpdateWithImage_( void* db, const char *message, const char *icon, 
+	unsigned int rowid, const char *image, unsigned int width, unsigned int height, unsigned int imageId ) 
+{
+	int error_ret_val = -1, ok_ret_val = 0;
+	int status;
+	std::string r;
+	if( db == nullptr ) {
+		return error_ret_val;
+	}
+	sqlite3* _db = (sqlite3 *)db;
+
+	if( beginTransaction(_db) != 0 ) { return error_ret_val; }
+
+	if( image == nullptr || strlen(image) == 0 ) {
+		r = "DELETE FROM `" + _images_table + "` WHERE ROWID=" + std::to_string(imageId) + ";";
+	} else {
+		if( imageId <= 0 ) {
+			r = "INSERT INTO `" + _images_table + "` ('width', 'height', 'image')" + " VALUES (" + 
+				std::to_string(width) + ", " + std::to_string(height) + ", \"" + image + "\" );";	
+		} else {
+			r = "UPDATE `" + _images_table + "` SET image=\"" + image + "\", width=" + std::to_string(width) + 
+				", height=" + std::to_string(height) + " WHERE ROWID=" + std::to_string(imageId) + ";";
 		}
-		status = sqlite3_step( statement );
-		if( status == SQLITE_DONE ) {
-			ret_val = 0;
-		} 
-		sqlite3_finalize(statement);
-		return ret_val;
+	}
+	status = sqlite3_exec( _db, r.c_str(), NULL, NULL, NULL );
+	if( status != SQLITE_OK ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	if( imageId <= 0 ) {
+		imageId = sqlite3_last_insert_rowid(_db);
+	}
+	if( imageId <= 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	if( image == nullptr || strlen(image) == 0 ) {
+		r = "UPDATE `" + _chat_table + "` SET message=\"" + message + "\", imageIcon=NULL, imageId=NULL" + 
+			" WHERE ROWID=" + std::to_string(rowid) + ";";
+	} else {
+		r = "UPDATE `" + _chat_table + "` SET message=\"" + message + "\", imageIcon=\"" + icon + "\"" +
+		", imageId=" + std::to_string(imageId) + " WHERE ROWID=" + std::to_string(rowid) + ";";
+	}
+	status = sqlite3_exec( _db, r.c_str(), NULL, NULL, NULL );
+	if( status != SQLITE_OK ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	if( commitTransaction(_db) != 0 ) { return error_ret_val; }
+	return ok_ret_val;
+}
+
+int chatDbRemove_( void* db, unsigned int rowid ) {
+	int error_ret_val = -1, ok_ret_val=0;
+	if( db == nullptr ) {
+		return error_ret_val;
+	}
+	sqlite3* _db = (sqlite3 *)db;
+
+	std::string r = "DELETE FROM '" + _chat_table + "' WHERE ROWID=" + std::to_string(rowid) + ";";
+	int status = sqlite3_exec( _db, r.c_str(), NULL, NULL, NULL );
+	if( status != SQLITE_OK ) {
+		return error_ret_val;
+	}
+	return ok_ret_val;
+}
+
+int chatDbRemoveWithImage_( void* db, unsigned int rowid, unsigned int imageId ) {
+	int error_ret_val = -1, ok_ret_val=0;
+	int status;
+	std::string r;
+
+	if( db == nullptr ) {
+		return error_ret_val;
+	}
+	sqlite3* _db = (sqlite3 *)db;
+
+	if( imageId < 0 ) {		// No image
+		std::string r = "DELETE FROM '" + _chat_table + "' WHERE ROWID=" + std::to_string(rowid) + ";";
+		const char *sql = r.c_str();
+		int status = sqlite3_exec( _db, sql, NULL, NULL, NULL );
+		if( status != SQLITE_OK ) {
+			return error_ret_val;
+		}
+		return ok_ret_val;
+	}
+
+	if( beginTransaction(_db) != 0 ) { return error_ret_val; }
+
+	r = "DELETE FROM '" + _chat_table + "' WHERE ROWID=" + std::to_string(rowid) + ";";
+	status = sqlite3_exec( _db, r.c_str(), NULL, NULL, NULL );
+	if( status != SQLITE_OK ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	r = "DELETE FROM '" + _images_table + "' WHERE ROWID=" + std::to_string(imageId) + ";";
+	status = sqlite3_exec( _db, r.c_str(), NULL, NULL, NULL );
+	if( status != SQLITE_OK ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	
+	if( commitTransaction(_db) != 0 ) { return error_ret_val; }
+	return ok_ret_val;
 }
 
 
-static int make_request( sqlite3 *_db, const wchar_t *request, 
-	void (*callback)( sqlite3_stmt *statement, void *callback_data), void *callback_data ) 
+static int make_request( sqlite3 *_db, const char *request, 
+	void (*callback)( sqlite3_stmt *statement, void *callback_data, void *custom_data), void *callback_data, void *custom_data ) 
 {
 	int ret_val = -1;
 	sqlite3_stmt *statement;
 
-	int status = sqlite3_prepare16( _db, request, -1, &statement, NULL );
+	int status = sqlite3_prepare( _db, request, strlen(request)+1, &statement, NULL );
 	if( status == SQLITE_OK ) {
 		while((status = sqlite3_step(statement)) == SQLITE_ROW) {
 			if( callback != nullptr ) {
-				callback( statement, callback_data );
+				callback( statement, callback_data, custom_data );
 			}
 		}
 		if( status == SQLITE_DONE ) {
@@ -203,41 +369,88 @@ static int make_request( sqlite3 *_db, const wchar_t *request,
 
 static bool is_table_exists( sqlite3 *_db ) {
 	bool exists = false;
-	std::wstring r = L"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='" + _chat_table + L"';";
-	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *cbdata) { 
+	std::string r = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='" + _chat_table + "';";
+	int status = make_request( _db, r.c_str(), [](sqlite3_stmt *stmt, void *cbdata, void *custom_data) { 
 			*((bool *)cbdata) = (sqlite3_column_int( stmt, 0 ) == 1); 
 			return;
-		}, (void *)&exists
+		}, (void *)&exists, nullptr
 	);
 	return (status == 0 && exists);
 }		
 
 
 static int create_table( sqlite3* _db ) {
+	int ok_ret_val = 0, error_ret_val = -1;
 	int status;
-	std::wstring r = L"CREATE TABLE IF NOT EXISTS " + _chat_table + 
-		L" (user TEXT NOT NULL, message TEXT NOT NULL, activity TEXT NOT NULL, datetime INT NOT NULL);";
-	status = make_request( _db, r.c_str(), nullptr, nullptr );
+	std::string r;
 
-	r = L"CREATE INDEX 'datetime_index' ON " + _chat_table + L" (`datetime` DESC)";
-	status = make_request( _db, r.c_str(), nullptr, nullptr );
+	if( beginTransaction(_db) != 0 ) { return error_ret_val; }
 
-	r = L"CREATE INDEX 'activity_index' ON " + _chat_table + L" (`activity` DESC)";
-	status = make_request( _db, r.c_str(), nullptr, nullptr );
-	return status;
+	// Images table
+	r = "CREATE TABLE IF NOT EXISTS " + _images_table + " (image TEXT NOT NULL, width INT, height INT, type TEXT );";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	// Chat table
+	r = "CREATE TABLE IF NOT EXISTS " + _chat_table + 
+		" (user TEXT NOT NULL, message TEXT NOT NULL, activity TEXT NOT NULL, datetime INT NOT NULL, imageIcon TEXT, imageId INT)";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	r = "CREATE INDEX IF NOT EXISTS 'datetime_index' ON " + _chat_table + " (`datetime` DESC)";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	r = "CREATE INDEX IF NOT EXISTS 'activity_index' ON " + _chat_table + " (`activity` DESC)";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	// Users table
+	r = "CREATE TABLE IF NOT EXISTS " + _users_table + " (user TEXT NOT NULL, activity TEXT NOT NULL, datetime INT NOT NULL, UNIQUE(user, activity) ON CONFLICT REPLACE);";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	r = "CREATE INDEX IF NOT EXISTS 'datetime_index' ON " + _users_table + " (`datetime` DESC)";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+	r = "CREATE INDEX IF NOT EXISTS 'activity_index' ON " + _users_table + " (`activity` DESC)";
+	status = make_request( _db, r.c_str(), nullptr, nullptr, nullptr );
+	if( status != 0 ) {
+		rollbackTransaction(_db);
+		return error_ret_val;
+	}
+
+	if( commitTransaction(_db) != 0 ) { return error_ret_val; }
+
+	return ok_ret_val;
 }
 
 
-static void create_read_request_string( std::wstring& r, std::wstring& activity, 
+static void create_read_request_string( std::string& r, std::string& activity, 
 	unsigned int limit, unsigned int offset, unsigned int rowidGreaterThan ) 
 {
 	if( rowidGreaterThan == -1 ) {
-		r = L"SELECT user, message, datetime, ROWID FROM '" + _chat_table + 
-			L"' WHERE activity='" + activity + L"' ORDER BY datetime DESC" + 
-			L" LIMIT " + std::to_wstring(limit) + L" OFFSET " + std::to_wstring(offset) + L";";
+		r = "SELECT user, message, datetime, ROWID, imageIcon, imageId FROM `" + _chat_table + "`" + 
+			" WHERE activity=\"" + activity + "\" ORDER BY datetime DESC" + 
+			" LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset) + ";";
 	} else {
-		r = L"SELECT user, message, datetime, ROWID FROM '" + _chat_table + 
-			L"' WHERE activity='" + activity + L"' AND ROWID>" + std::to_wstring(rowidGreaterThan) + L" ORDER BY datetime DESC" + 
-			L" LIMIT " + std::to_wstring(limit) + L" OFFSET " + std::to_wstring(offset) + L";";
+		r = "SELECT user, message, datetime, ROWID, imageIcon, imageId FROM `" + _chat_table + "`" +
+			" WHERE activity=\"" + activity + "\" AND ROWID>" + std::to_string(rowidGreaterThan) + " ORDER BY datetime DESC" + 
+			" LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset) + ";";
 	}
 }

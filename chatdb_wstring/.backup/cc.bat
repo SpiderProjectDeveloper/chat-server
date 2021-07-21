@@ -1,0 +1,1 @@
+cl /EHsc chat.cpp user32.lib shell32.lib

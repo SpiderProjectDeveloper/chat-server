@@ -1,0 +1,85 @@
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Status=101
+request string=SELECT user, message, datetime, ROWID FROM 'chat' WHERE activity='8' ORDER BY datetime DESC LIMIT 100 OFFSET 0
+prepare status0
+Prepared ok!
+Status=101
+request string=SELECT user, message, datetime, ROWID FROM 'chat' WHERE activity='80' ORDER BY datetime DESC LIMIT 100 OFFSET 0
+prepare status0
+Prepared ok!
+Has callback?
+Calling callback!
+Has callback?
+Calling callback!
+Has callback?
+Calling callback!
+Has callback?
+Calling callback!
+Has callback?
+Calling callback!
+Has callback?
+Calling callback!
+Status=101
+The Dll has been loaded!Updaing rowid=73
+Updated successfully.
+Removing rowid=83
+Deleted successfully.
+Reading:
+
+
+Reading with callback:
+user=user0, message=сообщение: 455, datetime=1625490226, rowid=13, customData=1
+user=user6, message=сообщение: 1621, datetime=1625490226, rowid=17, customData=2
+user=user7, message=сообщение: 2647, datetime=1625490226, rowid=18, customData=3
+user=user6, message=сообщение: 1621, datetime=1625490218, rowid=7, customData=4
+user=user7, message=сообщение: 2647, datetime=1625490218, rowid=8, customData=5
+user=user0, message=сообщение: 455, datetime=1625490217, rowid=3, customData=6
+Read callback counter value after all readings: 6

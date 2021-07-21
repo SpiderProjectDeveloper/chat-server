@@ -1,0 +1,13 @@
+The Dll has been loaded!Updaing rowid=73
+Updated successfully.
+Removing rowid=83
+Deleted successfully.
+Reading:
+{ "usr":"user", "msg":"23423423", "dt": 1625134987, "rowid":20},{ "usr":"user", "msg":"wrwerewrwerw", "dt": 1625124475, "rowid":19},{ "usr":"user", "msg":"????? ?????????", "dt": 1625124042, "rowid":18},{ "usr":"user", "msg":"A new message", "dt": 1625062934, "rowid":17}
+
+Reading with callback:
+user=user, message=23423423, datetime=1625134987, rowid=20, customData=1
+user=user, message=wrwerewrwerw, datetime=1625124475, rowid=19, customData=2
+user=user, message=????? ?????????, datetime=1625124042, rowid=18, customData=3
+user=user, message=A new message, datetime=1625062934, rowid=17, customData=4
+Read callback counter value after all readings: 4

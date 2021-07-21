@@ -1,0 +1,25 @@
+chatDbRemove_
+The Dll has been loaded!
+Writing with image...
+
+Write with image stauts=0
+Updaing rowid=73
+Updated successfully.
+Removing rowid=83
+Deleted successfully.
+Reading with a callback:
+user=user1, message=message: 3417, datetime=1625666437, rowid=10, icon=12345678902824, inageId=4, customData=1
+user=user6, message=сообщение: 1412, datetime=1625666437, rowid=11, icon=(null), inageId=0, customData=2
+user=user1, message=сообщение: 3145, datetime=1625666437, rowid=12, icon=(null), inageId=0, customData=3
+user=user1, message=message: 3417, datetime=1625666428, rowid=7, icon=12345678902824, inageId=3, customData=4
+user=user6, message=сообщение: 1412, datetime=1625666428, rowid=8, icon=(null), inageId=0, customData=5
+user=user1, message=сообщение: 3145, datetime=1625666428, rowid=9, icon=(null), inageId=0, customData=6
+user=user1, message=message: 3417, datetime=1625666426, rowid=4, icon=12345678902824, inageId=2, customData=7
+user=user6, message=сообщение: 1412, datetime=1625666426, rowid=5, icon=(null), inageId=0, customData=8
+user=user1, message=сообщение: 3145, datetime=1625666426, rowid=6, icon=(null), inageId=0, customData=9
+user=user1, message=message: 3417, datetime=1625666424, rowid=1, icon=12345678902824, inageId=1, customData=10
+user=user6, message=сообщение: 1412, datetime=1625666424, rowid=2, icon=(null), inageId=0, customData=11
+user=user1, message=сообщение: 3145, datetime=1625666424, rowid=3, icon=(null), inageId=0, customData=12
+Read callback counter value after all readings: 12
+Reading an image with a callback:
+image=1234567890190, width=10, height=10, 3

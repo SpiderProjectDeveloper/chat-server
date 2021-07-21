@@ -28,6 +28,7 @@
 	.chat-send-message { display:inline-block; width:100%; height:54px; border: 1px solid #dfdfdf; border-radius: 8px; 
 		resize:none; font-size:14px; }
 	.chat-send-message:focus { outline: none !important; border:1px solid #efefef; box-shadow: 0 0 4px #719ECE; }
+	.chat-sys-message { display:none; color: #7f2f2f; background-color: rgba(255, 150, 150, 0.1); padding:4px;}
 	.chat-send-button { display:inline-block; margin-top: 8px; padding: 8px 24px 8px 24px; 
 		background-color:#cfcfcf; color:#2f2f2f; border-radius: 8px; cursor:pointer; text-align:center; 
 		font-size:14px; height:30px; }
@@ -47,7 +48,9 @@
 		chatServer:'http://localhost:8010/', chatReadUrl:'.chat_read', chatInsertUrl:'.chat_write',
 		chatUpdateUrl:'.chat_update', chatRemoveUrl:'.chat_remove',
 		chatUpdateHTML:'&#9998;', chatSendUpdateHTML:'&#10004;', chatRemoveHTML:'&#10006;', chatCancelEditHTML:'&nwarhk;',
-		chatMessagesLimit: 25, chatMessagesNumber: 0, chatCheckForNewMessagesTimeout: 30000, chatIsFullyLoaded: null, chatMaxRowId:-1 };
+		chatActivityTitleElem: null, chatSendMessageElem: null, chatSysMessageElem: null, chatMessageListElem:null, 
+		chatMessagesLimit: 25, chatMessagesNumber: 0, chatCheckForNewMessagesTimeout: 30000, chatIsFullyLoaded: null, chatMaxRowId:-1,
+		chatIsBeingLoadedMessage: 'Loading. Please wait...', chatErrorLoadingMessages: 'Error loading messages!' };
 
 	loadAndDisplayChat( 'chat', 'activityCode', 'Activity Name' );
 
@@ -57,23 +60,26 @@
 		if(!containerElem) {
 			return;
 		}
+		initChat( containerElem );
+
 		let xhttp = new XMLHttpRequest();
 		xhttp.onreadystatechange = function() {
 			if (xhttp.readyState == 4 ) {
 				if( xhttp.status == 200 ) {
-					containerElem.innerHTML = '';
 					let dataObj = parseJsonString(xhttp.responseText);
 					if( dataObj === null || dataObj.errcode !== 0 ) {
+						displaySysMessage( _globals.chatErrorLoadingMessages );
 						return;
 					}
+					displaySysMessage(null);
 					_globals.activityCodeChatIsCalledFor = activityCode;
-					displayChat( containerElem, dataObj.buffer, activityCode, activityName );
+					displayChat( dataObj.buffer, activityCode, activityName );
 				} else {
-					containerElem.innerHTML = 'Error loading the messages...';
+					displaySysMessage( _globals.chatErrorLoadingMessages );
 				}
 			}
 		}
-		containerElem.innerHTML = 'Please wait while loading the messages...';
+		displaySysMessage( _globals.chatIsBeingLoadedMessage );
 		let jsonData = JSON.stringify( { sessId: _globals.sessId, user: _globals.user, 
 			projectId: _globals.projectId, activity: activityCode, limit:_globals.chatMessagesLimit } );
 		xhttp.open("POST", _globals.chatServer + _globals.chatReadUrl, true);
@@ -115,44 +121,63 @@
 	}
 
 
-	function displayChat( containerElem, dataResponse, activityCode, activityName ) {
+	function initChat(containerElem) {
 		let containerElemHeight = containerElem.getBoundingClientRect().height;
 
-		let activityTitleElem = document.createElement('div');
-		activityTitleElem.className = 'chat-activity-title'; 
-		activityTitleElem.innerHTML = `<span class='chat-activity-code'>[${activityCode}]</span>` +
-			`&nbsp;&nbsp;<span class='chat-activity-name'>${activityName}</span>`;
-		containerElem.appendChild(activityTitleElem);
+		if( _globals.chatActivityTitleElem === null ) { 	// If not initialized yet...
 
-		let sendMessageElem = document.createElement('div');
-		sendMessageElem.className = 'chat-send-message-item';
-		containerElem.appendChild(sendMessageElem);
+			let sysMessageElem = document.createElement('div');
+			sysMessageElem.innerHTML = '';
+			sysMessageElem.className = 'chat-sys-message';
+			containerElem.appendChild(sysMessageElem);
+			_globals.chatSysMessageElem = sysMessageElem;
 
-		let inputElem = document.createElement('textarea');
-		inputElem.className = 'chat-send-message';
-		inputElem.rows = 4;
-		sendMessageElem.appendChild(inputElem);
+			let activityTitleElem = document.createElement('div');
+			activityTitleElem.className = 'chat-activity-title'; 
+			containerElem.appendChild(activityTitleElem);
+			_globals.chatActivityTitleElem = activityTitleElem;
 
-		let buttonElem = document.createElement('div');
-		buttonElem.type = 'button';
-		buttonElem.innerHTML = 'Send';
-		buttonElem.className = 'chat-send-button';
-		sendMessageElem.appendChild(buttonElem);
+			let sendMessageElem = document.createElement('div');
+			sendMessageElem.className = 'chat-send-message-item';
+			containerElem.appendChild(sendMessageElem);
+			_globals.chatSendMessageElem = sendMessageElem;
 
-		let messageListElem = document.createElement('div');
-		messageListElem.className = 'chat-messages-list';
-		messageListElem.style.height = (containerElemHeight - 156).toString() + 'px';
-		containerElem.appendChild(messageListElem);
+			let inputElem = document.createElement('textarea');
+			inputElem.className = 'chat-send-message';
+			inputElem.rows = 4;
+			sendMessageElem.appendChild(inputElem);
 
-		messageListElem.addEventListener('scroll', function(e) {
-			if( messageListElem.scrollTop >= (messageListElem.scrollHeight - messageListElem.offsetHeight) ) {
-				loadMoreMessages( messageListElem );
+			let buttonElem = document.createElement('div');
+			buttonElem.type = 'button';
+			buttonElem.innerHTML = 'Send';
+			buttonElem.className = 'chat-send-button';
+			sendMessageElem.appendChild(buttonElem);
+
+			let messageListElem = document.createElement('div');
+			messageListElem.className = 'chat-messages-list';
+			messageListElem.style.height = (containerElemHeight - 156).toString() + 'px';
+			containerElem.appendChild(messageListElem);
+			_globals.chatMessageListElem = messageListElem;
+
+			messageListElem.addEventListener('scroll', function(e) {
+				if( messageListElem.scrollTop >= (messageListElem.scrollHeight - messageListElem.offsetHeight) ) {
+					loadMoreMessages( messageListElem );
+				}
+			});
+
+			buttonElem.onclick = function(e) {
+				insert( inputElem, messageListElem );
+			};
+		} else { 	// If already initialized - clearing the chat list
+			while( _globals.chatMessageListElem.hasChildNodes() ) {
+				_globals.chatMessageListElem.removeChild( _globals.chatMessageListElem.lastChild );
 			}
-		});
+		}
+	}
 
-		buttonElem.onclick = function(e) {
-			insert( inputElem, messageListElem );
-		};
+	function displayChat( dataResponse, activityCode, activityName ) {
+		_globals.chatActivityTitleElem.innerHTML = `<span class='chat-activity-code'>[${activityCode}]</span>` +
+				`&nbsp;&nbsp;<span class='chat-activity-name'>${activityName}</span>`;
 
 		for( let i = 0 ; i < dataResponse.length ; i++ ) {
 			let fields = dataResponse[i]; 	// 0 - user, 1 - message, 2 - datetime
@@ -166,10 +191,10 @@
 				continue;
 			}
 			let dataItem = { rowid: rowid, user: fields.usr, message: fields.msg, datetime: dateIntoSpiderDateString( fields.dt ) };
-			addChatItem( messageListElem, dataItem )
+			addChatItem( _globals.chatMessageListElem, dataItem )
 		}
 
-		setTimeout( function() { checkForNewMessages( messageListElem ); }, _globals.chatCheckForNewMessagesTimeout );
+		setTimeout( function() { checkForNewMessages( _globals.chatMessageListElem ); }, _globals.chatCheckForNewMessagesTimeout );
 	}
 
 	function displayMoreMessages( messageListElem, dataResponse ) {
@@ -371,6 +396,16 @@
 		xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');		
 		xhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
 		xhttp.send( jsonData );
+	}
+
+	function displaySysMessage( msg ) {
+		if( msg === null ) {
+			_globals.chatSysMessageElem.style.display = 'none';
+		} else {
+			_globals.chatSysMessageElem.innerHTML = msg;
+			_globals.chatSysMessageElem.style.display = 'block';
+
+		}
 	}
 
 

@@ -1,1 +1,1 @@
-cl /EHsc chat.cpp user32.lib shell32.lib
+cl /EHsc chat.cpp user32.lib shell32.lib Ws2_32.lib Shlwapi.lib
