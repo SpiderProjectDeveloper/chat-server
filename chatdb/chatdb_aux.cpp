@@ -1,11 +1,36 @@
 #include <string>
+#include <time.h>
 #include "sqlite3.h"
 
 #define CHAT_DB_DLL_EXPORT 1
 #include "chatdb.h"
 #include "chatdb_sys.h"
 
-int chatDbActivities_( void* db, char *user, ChatDbActivitiesCallBack_ cb, void *customData ) 
+/*
+#include <stdio.h>
+void dlllog(const char *msg) {
+	FILE *fp;
+	fp = fopen("C:\\Users\\1395262\\Desktop\\sava\\spider\\serverchat\\chatdb\\log.txt", "a");
+	if( fp ) {
+		fprintf( fp, "%s\n", msg);
+		fclose(fp);
+	}
+}
+
+void dlllog_data( char *user, char *activity, char *has_new, unsigned int count) {
+	char b[80];
+	sprintf(b, "count=%s", user);
+	dlllog(b);
+	sprintf(b, "activity=%s", activity);
+	dlllog(b);
+	sprintf(b, "has_new=%s", has_new);
+	dlllog(b);
+	sprintf(b, "count=%u", count);
+	dlllog(b);
+}
+*/
+
+int chatDbActivities_( void* db, const char *user, ChatDbActivitiesCallBack_ cb, void *customData ) 
 {
 	int ret_val = _error_ret_val;
 
@@ -21,7 +46,7 @@ int chatDbActivities_( void* db, char *user, ChatDbActivitiesCallBack_ cb, void 
 		" FROM chat"\
 		" LEFT JOIN users ON users.user=? AND users.activity=chat.activity"\
 		" GROUP BY chat.activity";
-
+//dlllog(r.c_str());
 	int status = sqlite3_prepare( _db, r.c_str(), -1, &statement, NULL );
   if (status == SQLITE_OK) {
   	sqlite3_bind_text(statement, 1, user, strlen(user), SQLITE_STATIC);    
@@ -31,6 +56,7 @@ int chatDbActivities_( void* db, char *user, ChatDbActivitiesCallBack_ cb, void 
 			unsigned int count = sqlite3_column_int( statement, 1 );
 			unsigned int updated_at = sqlite3_column_int( statement, 2 );
 			char *has_new = (char*)sqlite3_column_text( statement, 3 );
+//dlllog_data(user, activity, has_new, count);			
 			cb( activity, count, updated_at, has_new, customData );
 		}
 		if( status == SQLITE_DONE ) {
@@ -42,7 +68,7 @@ int chatDbActivities_( void* db, char *user, ChatDbActivitiesCallBack_ cb, void 
 }
 
 
-int chatDbUpdateUserRead_( void* db, char *user, char *activity, unsigned int dt ) {
+int chatDbUpdateUserRead_( void* db, const char *user, const char *activity, unsigned long int dt ) {
 	int ret_val = _error_ret_val;
 	int status;
 
@@ -64,6 +90,10 @@ int chatDbUpdateUserRead_( void* db, char *user, char *activity, unsigned int dt
 		return ret_val;
   }    
     
+	if( dt == 0 ) {
+		dt = time(NULL);
+	}
+
   sqlite3_bind_text(statement, 1, user, strlen(user), SQLITE_STATIC);    
   sqlite3_bind_text(statement, 2, activity, strlen(activity), SQLITE_STATIC);    
   sqlite3_bind_text(statement, 3, user, strlen(user), SQLITE_STATIC);    

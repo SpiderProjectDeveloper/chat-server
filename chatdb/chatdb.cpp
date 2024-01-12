@@ -66,7 +66,9 @@ int chatDbWrite_( void *db, const char *activity, const char *user, const char *
 	sqlite3_finalize(statement);
 
 	rowid = sqlite3_last_insert_rowid(_db);
-	
+
+	chatDbUpdateUserRead_( _db, user, activity, write_time );
+
 	return ret_val;
 }
 
@@ -127,6 +129,8 @@ int chatDbWriteWithImage_( void* db, const char *activity, const char *user, con
 	rowid = sqlite3_last_insert_rowid(_db);
 	
 	if( commitTransaction(_db) != 0 ) { return error_ret_val; }
+
+	chatDbUpdateUserRead_( _db, user, activity, write_time );
 
 	return ok_ret_val;
 }

@@ -73,6 +73,19 @@ int WINAPI WinMain(
 	oStream->Read(pBuff, (ULONG)ulnSize.QuadPart, &ulBytesRead);
 	oStream->Release();
 
+
+Gdiplus::Bitmap* _pBitmap = NULL;
+IStream* _pStream = NULL;
+
+HRESULT _hResult = ::CreateStreamOnHGlobal( NULL, TRUE, &_pStream );
+if(_hResult == S_OK && _pStream)
+{
+    _hResult = _pStream->Write(&pBuff[0], ulBytesRead, NULL);
+    if(_hResult == S_OK)
+        _pBitmap = Gdiplus::Bitmap::FromStream( _pStream );
+    _pStream->Release();
+}
+
 	// Копируем буфер в файл
 	FILE* pFile;
   pFile = fopen("test_image.binary", "wb");

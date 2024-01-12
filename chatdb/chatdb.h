@@ -1,6 +1,3 @@
-#include <string>
-#include <stdexcept>
-
 typedef void (*ChatDbReadCallBack_) (
 		char *user, char *message, unsigned int &datetime, unsigned int& rowid, 
 		char *icon, unsigned int& imageId, void *customData );		
@@ -91,6 +88,6 @@ CHATDB_DECLSPEC char *chatDbGetIconBuffer_( void *im, unsigned int& length );
 
 CHATDB_DECLSPEC int chatDbGetImageStatus_( void *im );
 
-CHATDB_DECLSPEC int chatDbActivities_( void* db,  char *user, ChatDbActivitiesCallBack_ cb, void *customData );
+CHATDB_DECLSPEC int chatDbActivities_( void* db,  const char *user, ChatDbActivitiesCallBack_ cb, void *customData );
 
-CHATDB_DECLSPEC int chatDbUpdateUserRead_( void* db, char *user, char *activity, unsigned int dt );
+CHATDB_DECLSPEC int chatDbUpdateUserRead_( void* db, const char *user, const char *activity, unsigned long int dt );

@@ -217,7 +217,7 @@ int WINAPI WinMain(
 	fprintf( _logfile, "Activities callback custom value after all readings: %d\n", activities_user_data);
 
 	fprintf( _logfile, "Updating last user read:\n" );
-	pUpdateUserRead( db, "user1", "8", 162687777 );
+	pUpdateUserRead( db, "user1", "8", 0 );
 
 	// Closing the databas
 	pClose( db );
